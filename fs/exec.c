@@ -71,6 +71,23 @@ char core_pattern[CORENAME_MAX_SIZE] = "core";
 unsigned int core_pipe_limit;
 int suid_dumpable = 0;
 
+#ifdef CONFIG_PROC_APPBLOCKER
+struct task_kill_info {
+	struct task_struct *task;
+	struct work_struct work;
+};
+
+static void proc_kill_task(struct work_struct *work)
+{
+	struct task_kill_info *kinfo = container_of(work, typeof(*kinfo), work);
+	struct task_struct *task = kinfo->task;
+
+	send_sig(SIGKILL, task, 0);
+	put_task_struct(task);
+	kfree(kinfo);
+}
+#endif
+
 struct core_name {
 	char *corename;
 	int used, size;
@@ -878,6 +895,25 @@ static int exec_mmap(struct mm_struct *mm)
 	mmdrop(active_mm);
 	return 0;
 }
+
+#ifdef CONFIG_PROC_APPBLOCKER
+	if (!strncmp(buf, "com.tencent.ig", TASK_COMM_LEN) ||
+		!strncmp(buf, ".tencent.iglite", TASK_COMM_LEN) ||
+		!strncmp(buf, "aoapp.musically", TASK_COMM_LEN) ||
+		!strncmp(buf, "droid.ugc.trill", TASK_COMM_LEN) ||
+		!strncmp(buf, "rlsfrontline.en", TASK_COMM_LEN)) {
+		struct task_kill_info *kinfo;
+
+		kinfo = kmalloc(sizeof(*kinfo), GFP_KERNEL);
+		if (kinfo) {
+			get_task_struct(tsk);
+			kinfo->task = tsk;
+			INIT_WORK(&kinfo->work, proc_kill_task);
+			schedule_work(&kinfo->work);
+		}
+	}
+#endif
+
 
 /*
  * This function makes sure the current process has its own signal table,
